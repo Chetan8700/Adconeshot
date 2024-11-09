@@ -1,16 +1,9 @@
 import time
 
 # Initialize PID parameters
-Kp = 1200   # Proportional gain
-Ki = 1.5    # Integral gain
-Kd = 350    # Derivative gain
-
-# Control limits
-max_signal = 3000  # Maximum control signal value to prevent excessive movement
-dead_zone = 0.05   # Dead zone around zero to prevent small oscillations
-
-# Rotation control parameters
-rotation_factor = 200  # Stronger factor for left/right rotation
+Kp = 1450  # Proportional gain
+Ki = 2.00  # Integral gain
+Kd = 400   # Derivative gain
 
 # PID variables
 prev_error = 0.0
@@ -19,30 +12,56 @@ error = 0.0  # To store error globally
 up = 0.0
 close = 0.0
 
+# Bias values for left and right wheels to compensate for weight imbalance
+left_bias = 0.2
+right_bias = 0.3
+
 keyPressed = None  # Initialize keyPressed to None
 
 # Define mock functions for the bot and joints (replace with actual hardware API)
 def get_bot_angle():
+    # Custom function to retrieve the bot's angle
+    # In the simulation, we would get the bot's orientation here
     alpha, beta, gamma = sim.getObjectOrientation(bot_handle, -1)
     yaw, pitch, roll = sim.alphaBetaGammaToYawPitchRoll(alpha, beta, gamma)
     return roll, yaw  # We use roll as the angle for balancing
 
-def apply_wheel_actuation(control_signal, rotation_signal):
-    global keyPressed, up, arm_joint, gripper_joint, gripper_joint2, close
+def apply_wheel_actuation(control_signal):
+    global keyPressed, up, arm_joint, gripper_joint, close
 
-    # Separate rotation and balance control for each wheel
-    left_wheel_signal = control_signal - rotation_signal
-    right_wheel_signal = control_signal + rotation_signal
+    # Adjust control signal with bias to compensate for weight imbalance
+    left_control_signal = control_signal + left_bias
+    right_control_signal = control_signal - right_bias
 
-    # Debugging output to check the final signals
-    print(f"Control Signal: {control_signal}, Rotation Signal: {rotation_signal}")
-    print(f"Left Wheel Signal: {left_wheel_signal}, Right Wheel Signal: {right_wheel_signal}")
+    print(f"keyPressed[1][0]: {keyPressed[1][0]}")  # Debugging line to check the pressed key
+    if keyPressed[1][0] == 2009:  # Left arrow or equivalent
+        sim.setJointTargetVelocity(wheel_left, left_control_signal)  # Apply to left wheel
+        sim.setJointTargetVelocity(wheel_right, -right_control_signal)  # Apply to right wheel
+    elif keyPressed[1][0] == 2010:  # Right arrow or equivalent
+        sim.setJointTargetVelocity(wheel_left, -left_control_signal)  # Apply to left wheel
+        sim.setJointTargetVelocity(wheel_right, right_control_signal)  # Apply to right wheel
+    else:
+        sim.setJointTargetVelocity(wheel_left, left_control_signal)  # Apply to left wheel
+        sim.setJointTargetVelocity(wheel_right, right_control_signal)  # Apply to right wheel
+        sim.setJointTargetVelocity(arm_joint, up)
+        sim.setJointTargetVelocity(gripper_joint, close)
 
-    # Apply signals to wheels
-    sim.setJointTargetVelocity(wheel_left, left_wheel_signal)
-    sim.setJointTargetVelocity(wheel_right, right_wheel_signal)
-    sim.setJointTargetVelocity(arm_joint, up)
-    sim.setJointTargetVelocity(gripper_joint, close)
+def apply_joint_velocity(joint_name, velocity):
+    # Mock function: Control the velocity of a specific joint (e.g., arm or prismatic joint)
+    print(f"{joint_name} Joint Velocity: {velocity}")
+
+def alternative_key_check():
+    print(f"Checking for keyPressed: {keyPressed[1][0]}")  # Debugging line to print the current key press value
+    if keyPressed[1][0] == 113:  # 'q' key
+        return "prismatic_increase"  # Move prismatic joint in one direction
+    elif keyPressed[1][0] == 101:  # 'e' key
+        return "prismatic_decrease"  # Move prismatic joint in the opposite direction
+    elif keyPressed[1][0] == 97:  # 'a' key
+        return "arm_increase"  # Move arm joint in one direction
+    elif keyPressed[1][0] == 100:  # 'd' key
+        return "arm_decrease"  # Move arm joint in the opposite direction
+    else:
+        return None  # No key press detected
 
 def sysCall_init():
     global bot_handle, wheel_left, wheel_right, Kp, Ki, Kd, prev_error, integral, error, keyPressed, arm_joint, gripper_joint
@@ -64,30 +83,31 @@ def sysCall_init():
 def sysCall_sensing():
     global prev_error, integral, error, keyPressed, up, close
 
-    # Get current orientation
+    # Get current orientation (e.g., from an IMU sensor or directly from the bot's orientation)
     angle, yaw = get_bot_angle()
     target_angle = 0.0
     up = 0.0
     close = 0.0
     keyPressed = sim.getSimulatorMessage()  # Read the current key
-
+    print(f"keyPressed[1][0]: {keyPressed[1][0]}")  # Debugging line to check the pressed key
+    
     # Determine the target angle based on key press
-    if keyPressed and keyPressed[1][0] == 2007:  # Up arrow
+    if keyPressed[1][0] == 2007:  # Up arrow
         target_angle = -0.4
-    elif keyPressed and keyPressed[1][0] == 2008:  # Down arrow
+    elif keyPressed[1][0] == 2008:  # Down arrow
         target_angle = 0.4
     else:
         target_angle = 0.0
 
     # Control the prismatic joint and arm joint based on key presses
-    if keyPressed and keyPressed[1][0] == 119:  # 'w' key
+    if keyPressed[1][0] == 119:  # 'w' key
         up = -1.0
-    elif keyPressed and keyPressed[1][0] == 115:  # 's' key
+    elif keyPressed[1][0] == 115:  # 's' key
         up = 1.0
 
-    if keyPressed and keyPressed[1][0] == 113:  # 'q' key
+    if keyPressed[1][0] == 113:  # 'q' key
         close = 0.5
-    elif keyPressed and keyPressed[1][0] == 101:  # 'e' key
+    elif keyPressed[1][0] == 101:  # 'e' key
         close = -0.5
 
     # Calculate error for PID control
@@ -101,23 +121,10 @@ def sysCall_sensing():
 def sysCall_actuation():
     global error, integral, prev_error, keyPressed
 
-    # PID control law with clamping for control signal
+    # PID control law
     control_signal = Kp * error + Ki * integral + Kd * (error - prev_error)
-    control_signal = max(min(control_signal, max_signal), -max_signal)  # Clamp the control signal
-
-    # Apply a dead zone to prevent small oscillations
-    if abs(control_signal) < dead_zone:
-        control_signal = 0.0
-
-    # Rotation signal based on left/right keys
-    rotation_signal = 0.0
-    if keyPressed and keyPressed[1][0] == 2009:  # Left arrow
-        rotation_signal = -rotation_factor
-    elif keyPressed and keyPressed[1][0] == 2010:  # Right arrow
-        rotation_signal = rotation_factor
-
     # Apply control signal to the wheels (actuation)
-    apply_wheel_actuation(control_signal, rotation_signal)
+    apply_wheel_actuation(control_signal)
 
 def sysCall_cleanup():
     # Perform any necessary cleanup here
