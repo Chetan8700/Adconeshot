@@ -6,8 +6,8 @@ Ki = 1.5    # Integral gain
 Kd = 350    # Derivative gain
 
 # Control limits
-max_signal = 3000  # Maximum control signal value to prevent excessive movement
-dead_zone = 0.05   # Dead zone around zero to prevent small oscillations
+max_signal = 2500  # Maximum control signal value to prevent excessive movement
+dead_zone = 0.1  # Dead zone around zero to prevent small oscillations
 
 # Rotation control parameters
 rotation_factor = 200  # Stronger factor for left/right rotation
